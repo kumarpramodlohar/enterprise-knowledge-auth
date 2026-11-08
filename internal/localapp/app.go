@@ -117,6 +117,9 @@ func Run(ctx context.Context, c Config, ready func(string), logger *slog.Logger)
 	if err != nil {
 		return errors.New("cannot initialize local policy store")
 	}
+	if err := store.VerifySchema(pingCtx); err != nil {
+		return fmt.Errorf("local database policy controls are not safe: %w", err)
+	}
 	svc, err := service.New(store, codec, 500, 10000)
 	if err != nil {
 		return errors.New("cannot initialize local policy service")
