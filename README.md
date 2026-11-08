@@ -4,7 +4,7 @@ This repository is intended to contain the Go authentication and authorization p
 
 ## Current implementation status
 
-**Documentation only:** This repository contains no Go application, module, API, database migrations, or tests yet. The owner has selected initial architecture directions, but the detailed security design and contracts remain pending review. No service implementation or cutover has been approved.
+**Implementation started; not a runnable service:** This repository contains a Go module and tested internal components for strict request decoding, policy evaluation, and signed pagination cursors. There is no server, PostgreSQL store, migration, or Java integration yet. These components do not provide authorization to any application and must not be deployed as a service.
 
 The existing Java backend continues to authenticate requests and enforce access using its current implementation. It must remain authoritative until the replacement is implemented, verified, and approved for cutover.
 
@@ -16,7 +16,7 @@ The existing Java backend continues to authenticate requests and enforce access 
 - Accept user-subject assertions only from explicitly authorized, mutually authenticated backend clients after the backend authenticates the user.
 - Store auth-owned data in a separate schema in the existing PostgreSQL deployment, with least-privilege access and a cross-schema reference to backend-owned collections.
 
-These are target responsibilities, not implemented features. Exact API schemas, scope bounds, database privileges, and certificate procedures still require design and review.
+These are target responsibilities, not a running implementation. The initial request limits require compatibility verification against existing data. Database privileges, migration procedures, and certificate operations remain unfinished.
 
 ## Service boundaries
 
@@ -41,7 +41,15 @@ New administration UI/API and expanded audit-event features are deferred; existi
 
 ## Technology and setup
 
-The planned service language is Go, with PostgreSQL for policy data and Keycloak as the OIDC identity provider. The Go version, module path, dependencies, configuration, build, and CI conventions have not yet been established. There are currently no setup, run, or test commands for this repository.
+The module is `github.com/kumarpramodlohar/enterprise-knowledge-auth` and currently uses only the Go standard library. The module requires Go 1.27.3; deployment compatibility and support must be checked before release. With that toolchain available, validate the current components using:
+
+```sh
+go test -race -cover ./...
+go vet ./...
+go build ./...
+```
+
+`go build ./...` builds packages only; it does not produce a server executable. No configuration, database setup, service run command, or CI pipeline exists yet. The cursor codec is not connected to a database snapshot or revision comparison, and its key lifecycle is not operationally implemented. The policy evaluator must only be supplied with freshly and successfully loaded state; it is not an enforcement point.
 
 ## Specifications and project records
 
