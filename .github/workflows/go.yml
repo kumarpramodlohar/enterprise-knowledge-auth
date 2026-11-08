@@ -11,6 +11,20 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-test-only
+          POSTGRES_DB: eka_auth_test_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eka_auth_test_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -24,7 +38,13 @@ jobs:
             printf '%s\n' "$unformatted"
             exit 1
           fi
+      - name: Create isolated server-test database
+        run: docker exec "${{ job.services.postgres.id }}" createdb -U postgres eka_auth_test_server_ci
       - name: Test
+        env:
+          EKA_SYNTHETIC_POSTGRES_DSN: postgres://postgres:synthetic-test-only@localhost:5432/eka_auth_test_ci?sslmode=disable
+          EKA_LOCALAPP_TEST_DSN: postgres://postgres:synthetic-test-only@127.0.0.1:5432/eka_auth_test_server_ci?sslmode=disable
+          EKA_REQUIRE_POSTGRES_TEST: "1"
         run: go test -race -cover ./...
       - name: Vet
         run: go vet ./...

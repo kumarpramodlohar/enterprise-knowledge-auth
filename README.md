@@ -4,7 +4,7 @@ This repository is intended to contain the Go authentication and authorization p
 
 ## Current implementation status
 
-**Implementation started; not a runnable service:** The repository contains request validation, policy and pagination orchestration, signed cursors, and an internal HTTP handler. Handler tests use a synthetic store and real mutual TLS. There is no server executable, PostgreSQL store, migration, production configuration, or Java integration yet. These components do not provide authorization to any application and must not be deployed as a service.
+**Experimental local testing only:** Request validation, policy and pagination orchestration, signed cursors, an internal HTTP handler, mTLS configuration, an experimental PostgreSQL store and a loopback-only test server exist. A synthetic PostgreSQL and mTLS integration test exercises the server wiring. There is no deployable schema or migration, production configuration, or Java integration yet. This executable is not a production authority and must not be deployed as a service.
 
 The existing Java backend continues to authenticate requests and enforce access using its current implementation. It must remain authoritative until the replacement is implemented, verified, and approved for cutover.
 
@@ -41,7 +41,7 @@ New administration UI/API and expanded audit-event features are deferred; existi
 
 ## Technology and setup
 
-The module is `github.com/kumarpramodlohar/enterprise-knowledge-auth` and currently uses only the Go standard library. The module requires Go 1.27.3; deployment compatibility and support must be checked before release. With that toolchain available, validate the current components using:
+The module is `github.com/kumarpramodlohar/enterprise-knowledge-auth` and uses the pinned `pgx` PostgreSQL driver. The module requires Go 1.27.3; deployment compatibility and support must be checked before release. With that toolchain available, validate the current components using:
 
 ```sh
 go test -race -cover ./...
@@ -49,9 +49,27 @@ go vet ./...
 go build ./...
 ```
 
-`go build ./...` builds packages only; it does not produce a server executable. The GitHub Actions workflow runs formatting, race-enabled tests, vet and package builds; it has not yet been verified on GitHub and does not include database integration or vulnerability checks. No production configuration, database setup, or service run command exists yet.
+`go build ./...` checks that all packages compile; `go build ./cmd/auth-local` builds the experimental local executable. The GitHub Actions workflow configures a disposable PostgreSQL service and requires both synthetic integration tests alongside formatting, race-enabled tests, vet and package builds. The updated workflow has not yet been run on GitHub and does not include vulnerability checks.
 
-The HTTP handler requires TLS-verified client certificates and an allowlisted URI SAN; it must only be hosted behind an end-to-end TLS server configured to require and verify client certificates. It rejects certificates with multiple URI SANs to avoid ambiguous caller binding. Its integration tests use a test server, not a production listener. Cursor verification and revision comparison are connected to the service layer, but the store's required atomic provisioning and repeatable-read snapshot are currently an interface, not a PostgreSQL implementation. Certificate and key rotation, compromise response, legacy-data compatibility and deployment controls remain unverified.
+The PostgreSQL store and local-server integration tests require **two separate, new, empty, disposable databases** whose names begin `eka_auth_test_`. They create tables and functions without cleaning them up; never use a project or production database. The server test additionally requires a numeric loopback PostgreSQL address. For example, after creating the databases on a disposable local PostgreSQL instance:
+
+```sh
+export EKA_SYNTHETIC_POSTGRES_DSN='postgres://TEST_USER:TEST_PASSWORD@127.0.0.1:TEST_PORT/eka_auth_test_store?sslmode=disable'
+export EKA_LOCALAPP_TEST_DSN='postgres://TEST_USER:TEST_PASSWORD@127.0.0.1:TEST_PORT/eka_auth_test_server?sslmode=disable'
+EKA_REQUIRE_POSTGRES_TEST=1 go test -race -count=1 ./...
+```
+
+Replace the placeholders with credentials and port for the disposable instance. Without the respective DSN, each database integration test skips unless `EKA_REQUIRE_POSTGRES_TEST=1`, in which case it fails. Use new databases for each run.
+
+### Experimental local executable
+
+`go run ./cmd/auth-local` requires an already prepared **synthetic test schema**, not a project database. The fixture in the integration test is incomplete and is not a production migration or a supported development database setup. The automated test creates its own fixture, starts the server and shuts it down; a reusable standalone database setup is not yet provided.
+
+The executable reads `EKA_LOCAL_LISTEN` (numeric loopback IP and port), `EKA_LOCAL_DATABASE_URL` (numeric loopback host and `eka_auth_test_*` database), `EKA_LOCAL_SERVER_CERT`, `EKA_LOCAL_SERVER_KEY`, `EKA_LOCAL_CLIENT_CA`, `EKA_LOCAL_SIGNING_KEY`, `EKA_LOCAL_BINDING_KEY`, `EKA_LOCAL_CALLER_URI`, and at least one of `EKA_LOCAL_OIDC_ISSUER` or `EKA_LOCAL_NAMESPACE`. The key settings are file paths to separate test-only cursor keys of 32–4096 bytes. Certificates and keys must be generated separately and kept outside Git. These checks do not prove a database is disposable or that required production controls are installed.
+
+The HTTP handler requires TLS-verified client certificates and an allowlisted URI SAN; it must only be hosted behind an end-to-end TLS server configured to require and verify client certificates. The local listener uses the transport configuration to require verified client certificates. The handler rejects certificates with multiple URI SANs to avoid ambiguous caller binding. Integration tests do not establish production readiness. Routine certificate reload, revocation and connection termination remain unimplemented.
+
+The experimental PostgreSQL store reads a repeatable-read scope snapshot and delegates first-time OIDC creation to `eka_auth.resolve_oidc`. The actual guarded function, schema, revision triggers, freeze controls and production privileges are **not implemented**; the integration test's simplified fixture is not suitable for deployment. The store cannot establish that production guard or revision triggers are present and effective. Certificate and key operations, legacy-data compatibility and deployment controls remain unverified.
 
 ## Specifications and project records
 

@@ -1,0 +1,23 @@
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Go build and test outputs
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+/coverage.out
+/coverage.html
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
