@@ -4,7 +4,7 @@ This repository is intended to contain the Go authentication and authorization p
 
 ## Current implementation status
 
-**Implementation started; not a runnable service:** This repository contains a Go module and tested internal components for strict request decoding, policy evaluation, and signed pagination cursors. There is no server, PostgreSQL store, migration, or Java integration yet. These components do not provide authorization to any application and must not be deployed as a service.
+**Implementation started; not a runnable service:** The repository contains request validation, policy and pagination orchestration, signed cursors, and an internal HTTP handler. Handler tests use a synthetic store and real mutual TLS. There is no server executable, PostgreSQL store, migration, production configuration, or Java integration yet. These components do not provide authorization to any application and must not be deployed as a service.
 
 The existing Java backend continues to authenticate requests and enforce access using its current implementation. It must remain authoritative until the replacement is implemented, verified, and approved for cutover.
 
@@ -49,7 +49,9 @@ go vet ./...
 go build ./...
 ```
 
-`go build ./...` builds packages only; it does not produce a server executable. No configuration, database setup, service run command, or CI pipeline exists yet. The cursor codec is not connected to a database snapshot or revision comparison, and its key lifecycle is not operationally implemented. The policy evaluator must only be supplied with freshly and successfully loaded state; it is not an enforcement point.
+`go build ./...` builds packages only; it does not produce a server executable. The GitHub Actions workflow runs formatting, race-enabled tests, vet and package builds; it has not yet been verified on GitHub and does not include database integration or vulnerability checks. No production configuration, database setup, or service run command exists yet.
+
+The HTTP handler requires TLS-verified client certificates and an allowlisted URI SAN; it must only be hosted behind an end-to-end TLS server configured to require and verify client certificates. It rejects certificates with multiple URI SANs to avoid ambiguous caller binding. Its integration tests use a test server, not a production listener. Cursor verification and revision comparison are connected to the service layer, but the store's required atomic provisioning and repeatable-read snapshot are currently an interface, not a PostgreSQL implementation. Certificate and key rotation, compromise response, legacy-data compatibility and deployment controls remain unverified.
 
 ## Specifications and project records
 

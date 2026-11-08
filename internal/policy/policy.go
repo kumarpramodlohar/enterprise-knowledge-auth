@@ -21,8 +21,11 @@ const (
 
 var ErrInvalidState = errors.New("invalid or incomplete policy state")
 
-// Evaluate requires a fresh, successfully loaded state. A nil grant means that
-// no grant exists for the requested collection; an OIDC identity must exist.
+// Evaluate checks a freshly loaded role and optional grant against a requested
+// permission. ADMIN allows both permissions, MANAGE includes READ, and an
+// unknown local user is denied; malformed state or a missing OIDC user is an
+// error rather than a decision. A nil grant means no collection grant exists.
+// This does not check whether the resource itself exists.
 func Evaluate(kind string, role Role, grant *Permission, requested Permission) (Decision, error) {
 	if (kind != "OIDC" && kind != "LOCAL") || (requested != Read && requested != Manage) {
 		return "", ErrInvalidState

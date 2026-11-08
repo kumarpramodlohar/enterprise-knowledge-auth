@@ -1,4 +1,6 @@
 // Package cursor authenticates and binds pagination state without exposing identities.
+// Signing records a keyed request binding; verification checks the signature,
+// lifetime, and binding before callers compare the revision with the store.
 package cursor
 
 import (
@@ -39,6 +41,9 @@ type Codec struct {
 	skew     time.Duration
 }
 
+// New validates and copies the active and optional previous key pairs and the
+// lifetime and skew limits. Separate, sufficiently long keys and bounded
+// rotation reduce the risk of accepting invalid or indefinitely valid cursors.
 func New(active string, keys map[string]KeyPair, lifetime, skew time.Duration) (*Codec, error) {
 	if active == "" || len(active) > 64 || len(keys) < 1 || len(keys) > 2 || lifetime <= 0 || lifetime > 60*time.Second || skew < 0 || skew > 5*time.Second || lifetime%time.Second != 0 || skew%time.Second != 0 {
 		return nil, errors.New("invalid cursor configuration")
@@ -56,6 +61,10 @@ func New(active string, keys map[string]KeyPair, lifetime, skew time.Duration) (
 	return &Codec{active: active, keys: copyKeys, lifetime: lifetime, skew: skew}, nil
 }
 
+// Sign encodes the revision and last collection ID, adds a keyed digest of the
+// request binding, and signs the payload with the active key. This allows
+// stateless continuation without placing raw user identities in the cursor.
+// The signed payload is not encrypted.
 func (c *Codec) Sign(state State, binding Binding, now time.Time) (string, error) {
 	if binding.Caller == "" || binding.PageSize == 0 {
 		return "", errors.New("invalid cursor binding")
@@ -76,6 +85,9 @@ func (c *Codec) Sign(state State, binding Binding, now time.Time) (string, error
 	return base64.RawURLEncoding.EncodeToString(payload.Bytes()) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
+// Verify authenticates the cursor, checks its timestamps, and validates its
+// binding before returning pagination state. The caller must still compare the
+// returned revision with a fresh store snapshot; a cursor is not authorization.
 func (c *Codec) Verify(token string, binding Binding, now time.Time) (State, error) {
 	var state State
 	if len(token) == 0 || len(token) > 4096 || binding.Caller == "" || binding.PageSize == 0 {
@@ -131,6 +143,9 @@ func (c *Codec) Verify(token string, binding Binding, now time.Time) (State, err
 	return state, nil
 }
 
+// bindingDigest computes a domain-separated HMAC over length-delimited caller,
+// identity, endpoint, page size, and revision fields. This binds a cursor to
+// its originating request without embedding the raw identity in the payload.
 func bindingDigest(key []byte, binding Binding, state State) []byte {
 	mac := hmac.New(sha256.New, key)
 	for _, field := range []string{"eka.scope.cursor.binding.v1", binding.Caller, binding.Kind, binding.Issuer, binding.Subject, binding.Namespace, binding.Username, "/internal/v1/scopes/page"} {
@@ -143,6 +158,9 @@ func bindingDigest(key []byte, binding Binding, state State) []byte {
 	return mac.Sum(nil)
 }
 
+// write64 appends a big-endian integer to the cursor payload. The current
+// caller uses an in-memory buffer, so a write error indicates a programming
+// failure rather than an invalid cursor.
 func write64(w io.Writer, n uint64) {
 	if err := binary.Write(w, binary.BigEndian, n); err != nil {
 		panic(fmt.Sprintf("in-memory cursor encoding failed: %v", err))

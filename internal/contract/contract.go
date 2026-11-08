@@ -1,4 +1,6 @@
 // Package contract validates the internal authorization API's untrusted input.
+// Its decoders check JSON structure first, then validate each request and its
+// identity against configured trust rules before policy operations are called.
 package contract
 
 import (
@@ -30,6 +32,9 @@ type Identity struct {
 	Username  string `json:"username,omitempty"`
 }
 
+// UnmarshalJSON reads the exact fields required for an OIDC or local identity.
+// Rejecting missing, null, and kind-incompatible fields prevents ambiguous
+// identities; issuer and namespace trust are checked separately.
 func (id *Identity) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
@@ -92,6 +97,9 @@ type PageRequest struct {
 	Cursor   string   `json:"cursor,omitempty"`
 }
 
+// DecodeResolve parses a resolution request and validates its asserted identity.
+// It applies the shared strict JSON rules before checking configured trust, so
+// malformed or untrusted identities never reach resolution.
 func DecodeResolve(body []byte, trust Trust) (ResolveRequest, error) {
 	var request ResolveRequest
 	if err := decode(body, &request); err != nil {
@@ -103,6 +111,9 @@ func DecodeResolve(body []byte, trust Trust) (ResolveRequest, error) {
 	return request, nil
 }
 
+// DecodeCheck parses a permission request, then validates its identity,
+// collection UUID, and permission. This keeps invalid policy inputs from being
+// interpreted as authorization decisions.
 func DecodeCheck(body []byte, trust Trust) (CheckRequest, error) {
 	var request CheckRequest
 	if err := decode(body, &request); err != nil {
@@ -117,6 +128,9 @@ func DecodeCheck(body []byte, trust Trust) (CheckRequest, error) {
 	return request, nil
 }
 
+// DecodePage parses a scope request, validates its identity and bounds, and
+// applies the default page size when omitted. It rejects null or empty cursors
+// and invalid sizes so pagination cannot silently change the request.
 func DecodePage(body []byte, trust Trust, maximum int) (PageRequest, error) {
 	var wire struct {
 		Identity Identity        `json:"identity"`
@@ -150,6 +164,9 @@ func DecodePage(body []byte, trust Trust, maximum int) (PageRequest, error) {
 	return PageRequest{Identity: wire.Identity, PageSize: size, Cursor: cursor}, nil
 }
 
+// validateIdentity checks field sizes and exact issuer or local namespace
+// membership. It prevents unconfigured identity sources from reaching policy
+// evaluation without normalizing identity values.
 func validateIdentity(id Identity, trust Trust) error {
 	valid := func(s string) bool { return len(s) > 0 && len(s) <= MaxFieldSize && utf8.ValidString(s) }
 	switch id.Kind {
@@ -168,6 +185,9 @@ func validateIdentity(id Identity, trust Trust) error {
 	return nil
 }
 
+// decode enforces body size, UTF-8, one JSON object, duplicate detection, and
+// exact top-level field names before decoding into target. These checks avoid
+// accepting ambiguous or silently ignored authorization inputs.
 func decode(body []byte, target any) error {
 	if len(body) == 0 || len(body) > MaxBodySize || !utf8.Valid(body) || !validUnicodeEscapes(body) {
 		return ErrInvalidRequest
@@ -208,6 +228,7 @@ func decode(body []byte, target any) error {
 	return nil
 }
 
+// validUnicodeEscapes checks escaped surrogate pairs before JSON decoding.
 // encoding/json replaces unpaired surrogates, which would alter exact identities.
 func validUnicodeEscapes(body []byte) bool {
 	inString := false
@@ -257,6 +278,9 @@ func validUnicodeEscapes(body []byte) bool {
 	return true
 }
 
+// scanValue walks JSON tokens, limits nesting, and rejects duplicate object
+// members. The normal JSON decoder alone would accept duplicates, making
+// security-sensitive request values ambiguous.
 func scanValue(decoder *json.Decoder, depth int) error {
 	if depth > 4 {
 		return ErrInvalidRequest
